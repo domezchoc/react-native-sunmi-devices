@@ -37,4 +37,5 @@ repositories {
 dependencies {
     compile 'com.facebook.react:react-native:[0.55.4,)'
     compile "com.google.zxing:core:3.2.1"
+    implementation 'com.sunmi:printerlibrary:1.0.7'
 }
