@@ -1,8 +1,6 @@
 package com.sunmi.innerprinter;
 
 import android.content.BroadcastReceiver;
-
-import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContext;
@@ -42,11 +40,20 @@ import android.content.IntentFilter;
 import java.util.Map;
 import java.util.HashMap;
 
+import com.sunmi.peripheral.printer.ExceptionConst;
+import com.sunmi.peripheral.printer.InnerLcdCallback;
+import com.sunmi.peripheral.printer.InnerPrinterCallback;
+import com.sunmi.peripheral.printer.InnerPrinterException;
+import com.sunmi.peripheral.printer.InnerPrinterManager;
+import com.sunmi.peripheral.printer.InnerResultCallbcak;
+import com.sunmi.peripheral.printer.SunmiPrinterService;
+import com.sunmi.peripheral.printer.WoyouConsts;
+
 public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
-    public static ReactApplicationContext reactApplicationContext = null;
+    public static ReactApplicationContext reactApplicationContext;
     private IWoyouService woyouService;
     private BitmapUtils bitMapUtils;
-    private PrinterReceiver receiver = new PrinterReceiver();
+    private PrinterReceiver receiver=new PrinterReceiver();
 
     // 缺纸异常
     public final static String OUT_OF_PAPER_ACTION = "woyou.aidlservice.jiuv5.OUT_OF_PAPER_ACTION";
@@ -67,6 +74,92 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
     // 打印机固件开始升级
     public final static String FIRMWARE_UPDATING_ACITON = "woyou.aidlservice.jiuv5.FIRMWARE_UPDATING_ACITON";
 
+    // CUSTOM
+    public static int NoSunmiPrinter = 0x00000000;
+    public static int CheckSunmiPrinter = 0x00000001;
+    public static int FoundSunmiPrinter = 0x00000002;
+    public static int LostSunmiPrinter = 0x00000003;
+
+    /**
+     *  sunmiPrinter means checking the printer connection status
+     */
+    public int sunmiPrinter = CheckSunmiPrinter;
+    /**
+     *  SunmiPrinterService for API
+     */
+    private SunmiPrinterService sunmiPrinterService;
+
+    private InnerPrinterCallback innerPrinterCallback = new InnerPrinterCallback() {
+        @Override
+        protected void onConnected(SunmiPrinterService service) {
+            sunmiPrinterService = service;
+            checkSunmiPrinterService(service);
+        }
+
+        @Override
+        protected void onDisconnected() {
+            sunmiPrinterService = null;
+            sunmiPrinter = LostSunmiPrinter;
+        }
+    };
+
+    /**
+     * init sunmi print service
+     */
+    public void initSunmiPrinterService(Context context){
+        try {
+            boolean ret =  InnerPrinterManager.getInstance().bindService(context,
+                    innerPrinterCallback);
+            if(!ret){
+                sunmiPrinter = NoSunmiPrinter;
+            }else{
+                Log.i(TAG, "SunmiPrinter is Ready");
+            }
+        } catch (InnerPrinterException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     *  deInit sunmi print service
+     */
+    public void deInitSunmiPrinterService(Context context){
+        try {
+            if(sunmiPrinterService != null){
+                InnerPrinterManager.getInstance().unBindService(context, innerPrinterCallback);
+                sunmiPrinterService = null;
+                sunmiPrinter = LostSunmiPrinter;
+            }
+        } catch (InnerPrinterException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Check the printer connection,
+     * like some devices do not have a printer but need to be connected to the cash drawer through a print service
+     */
+    private void checkSunmiPrinterService(SunmiPrinterService service){
+        boolean ret = false;
+        try {
+            ret = InnerPrinterManager.getInstance().hasPrinter(service);
+        } catch (InnerPrinterException e) {
+            e.printStackTrace();
+        }
+        sunmiPrinter = ret?FoundSunmiPrinter:NoSunmiPrinter;
+    }
+
+    /**
+     *  Some conditions can cause interface calls to fail
+     *  For example: the version is too low、device does not support
+     *  You can see {@link ExceptionConst}
+     *  So you have to handle these exceptions
+     */
+    private void handleRemoteException(RemoteException e){
+        //TODO process when get one exception
+    }
+    // END CUSTOM
+
     private ServiceConnection connService = new ServiceConnection() {
         @Override
         public void onServiceDisconnected(ComponentName name) {
@@ -86,7 +179,7 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
     public SunmiInnerPrinterModule(ReactApplicationContext reactContext) {
         super(reactContext);
         reactApplicationContext = reactContext;
-        Intent intent = new Intent();
+		Intent intent = new Intent();
         intent.setPackage("woyou.aidlservice.jiuiv5");
         intent.setAction("woyou.aidlservice.jiuiv5.IWoyouService");
         reactContext.startService(intent);
@@ -103,6 +196,13 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
         mFilter.addAction(OVER_HEATING_ACITON);
         mFilter.addAction(FIRMWARE_UPDATING_ACITON);
         getReactApplicationContext().registerReceiver(receiver, mFilter);
+
+        initSunmiPrinterService(reactContext);
+        //Log.d("WoyouConsts.ENABLE_BOLD", WoyouConsts.ENABLE_BOLD + "");
+        //Log.d("WoyouConsts.SET_LINE_SPACING", WoyouConsts.SET_LINE_SPACING + "");
+        //Log.d("WoyouConsts.ENABLE", WoyouConsts.ENABLE + "");
+        //Log.d("WoyouConsts.DISABLE", WoyouConsts.DISABLE + "");
+
         Log.d("PrinterReceiver", "------------ init ");
     }
 
@@ -169,11 +269,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     printerService.printerInit(new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -214,11 +309,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
             public void run() {
                 try {
                     printerService.printerSelfChecking(new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
                         @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
@@ -334,11 +424,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     printerService.getPrintedLength(new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -383,11 +468,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     ss.lineWrap(count, new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -430,11 +510,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
             public void run() {
                 try {
                     ss.sendRAWData(d, new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
                         @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
@@ -479,11 +554,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     ss.setAlignment(align, new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -526,11 +596,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
             public void run() {
                 try {
                     ss.setFontName(tf, new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
                         @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
@@ -576,11 +641,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
             public void run() {
                 try {
                     ss.setFontSize(fs, new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
                         @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
@@ -628,11 +688,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
             public void run() {
                 try {
                     ss.printTextWithFont(txt, tf, fs, new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
                         @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
@@ -690,11 +745,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     ss.printColumnsText(clst, clsw, clsa, new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -739,11 +789,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 public void run() {
                     try {
                         ss.printBitmap(bitMap, new ICallback.Stub() {
-                            @Override
-                            public void onPrintResult(int par1, String par2) {
-                                Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                            }
-
                             @Override
                             public void onRunResult(boolean isSuccess) {
                                 if (isSuccess) {
@@ -810,11 +855,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     ss.printBarCode(d, s, h, w, tp, new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -866,11 +906,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     ss.printQRCode(d, size, level, new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -914,11 +949,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
             public void run() {
                 try {
                     ss.printOriginalText(txt, new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
                         @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
@@ -1025,11 +1055,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                 try {
                     ss.printText(msgs, new ICallback.Stub() {
                         @Override
-                        public void onPrintResult(int par1, String par2) {
-                            Log.d(TAG, "ON PRINT RES: " + par1 + ", " + par2);
-                        }
-
-                        @Override
                         public void onRunResult(boolean isSuccess) {
                             if (isSuccess) {
                                 p.resolve(null);
@@ -1057,60 +1082,177 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
         });
     }
 
-    @ReactMethod
-    public void clearBuffer() {
-        final IWoyouService ss = woyouService;
-        ThreadPoolManager.getInstance().executeTask(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ss.clearBuffer();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Log.i(TAG, "ERROR: " + e.getMessage());
-                }
-            }
-        });
+	public void test()
+    {
+        //Toast.makeText(context, "HELLO", Toast.LENGTH_SHORT).show();
+		if(sunmiPrinterService == null){
+			//TODO Service disconnection processing
+			return;
+		}
+
+		try {
+			int paper = sunmiPrinterService.getPrinterPaper();
+			sunmiPrinterService.printerInit(null);
+			sunmiPrinterService.setAlignment(1, null); // clear
+			sunmiPrinterService.printText("测试样张\n", null); // clear
+			//Bitmap bitmap = BitmapFactory.decodeResource(context.getResources(), R.drawable.sunmi);
+			//sunmiPrinterService.printBitmap(bitmap, null);
+			sunmiPrinterService.lineWrap(1, null); // clear
+			sunmiPrinterService.setAlignment(0, null); // clear
+			try {
+			    sunmiPrinterService.setPrinterStyle(WoyouConsts.SET_LINE_SPACING, 0);
+			} catch (RemoteException e) {
+			    sunmiPrinterService.sendRAWData(new byte[]{0x1B, 0x33, 0x00}, null);
+			}
+			sunmiPrinterService.printTextWithFont("说明：这是一个自定义的小票样式例子,开发者可以仿照此进行自己的构建\n",
+			        null, 12, null); // clear
+			if(paper == 1){
+			    sunmiPrinterService.printText("--------------------------------\n", null); // clear
+			}else{
+			    sunmiPrinterService.printText("------------------------------------------------\n", null); // clear
+			}
+			try {
+			    sunmiPrinterService.setPrinterStyle(WoyouConsts.ENABLE_BOLD, WoyouConsts.ENABLE); // clear
+			} catch (RemoteException e) {
+			    //sunmiPrinterService.sendRAWData(ESCUtil.boldOn(), null);
+			}
+			String txts[] = new String[]{"商品", "价格"};
+			int width[] = new int[]{1, 1};
+			int align[] = new int[]{0, 2};
+			sunmiPrinterService.printColumnsString(txts, width, align, null);
+			try {
+			    sunmiPrinterService.setPrinterStyle(WoyouConsts.ENABLE_BOLD, WoyouConsts.DISABLE); // clear
+			} catch (RemoteException e) {
+			    //sunmiPrinterService.sendRAWData(ESCUtil.boldOff(), null);
+			}
+			if(paper == 1){
+			    sunmiPrinterService.printText("--------------------------------\n", null); // clear
+			}else{
+			    sunmiPrinterService.printText("------------------------------------------------\n", null); // clear
+			}
+			txts[0] = "ต้นสนวุ้นเส้น AAb ProVision LED DigitalTV 32 นิ้ว รุ่น LT32G33 (รับประกัน 1 ปี)";
+			txts[1] = "10,000.00";
+			sunmiPrinterService.printColumnsString(txts, width, align, null);
+			txts[0] = "可乐";
+			txts[1] = "10¥";
+			sunmiPrinterService.printColumnsString(txts, width, align, null);
+			txts[0] = "薯条";
+			txts[1] = "11¥";
+			sunmiPrinterService.printColumnsString(txts, width, align, null);
+			txts[0] = "炸鸡";
+			txts[1] = "11¥";
+			sunmiPrinterService.printColumnsString(txts, width, align, null);
+			txts[0] = "圣代";
+			txts[1] = "10¥";
+			sunmiPrinterService.printColumnsString(txts, width, align, null);
+			if(paper == 1){
+			    sunmiPrinterService.printText("--------------------------------\n", null); // clear
+			}else{
+			    sunmiPrinterService.printText("------------------------------------------------\n", // clear
+			            null);
+			}
+			sunmiPrinterService.printTextWithFont("总计:          59¥\b", null, 40, null); // clear
+			sunmiPrinterService.setAlignment(1, null); // clear
+			//sunmiPrinterService.printQRCode("谢谢惠顾", 10, 0, null);
+			sunmiPrinterService.setFontSize(36, null); // clear
+			sunmiPrinterService.printText("谢谢惠顾", null); // clear
+			//sunmiPrinterService.autoOutPaper(null);
+			sunmiPrinterService.cutPaper(null); // clear
+		} catch (RemoteException e) {
+			e.printStackTrace();
+		}
     }
 
-    @ReactMethod
-    public void exitPrinterBufferWithCallback(final boolean commit, final Callback callback) {
-        final IWoyouService ss = woyouService;
-        ThreadPoolManager.getInstance().executeTask(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ss.exitPrinterBufferWithCallback(commit, new ICallback.Stub() {
-                        @Override
-                        public void onPrintResult(int code, String msg) {
-                            Log.d(TAG, "ON PRINT RES: " + code + ", " + msg);
-                            if (code == 0)
-                                callback.invoke(true);
-                            else
-                                callback.invoke(false);
-                        }
+	@ReactMethod
+	public void setAlignment2(int alignment, final Promise p) {
+		try {
+			final int align = alignment;
+			sunmiPrinterService.setAlignment(align, null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+        }
+	}
 
-                        @Override
-                        public void onRunResult(boolean isSuccess) {
-                            callback.invoke(isSuccess);
-                        }
+	@ReactMethod
+	public void printText(String text, final Promise p) {
+		try {
+			sunmiPrinterService.printText(text, null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+        }
+	}
 
-                        @Override
-                        public void onReturnString(String result) {
-                            // callback.invoke(isSuccess);
-                        }
+	@ReactMethod
+	public void lineWrap2(int x, final Promise p) {
+		try {
+			sunmiPrinterService.lineWrap(x, null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+        }
+	}
 
-                        @Override
-                        public void onRaiseException(int code, String msg) {
-                            callback.invoke(false);
-                        }
-                    });
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Log.i(TAG, "ERROR: " + e.getMessage());
-                    callback.invoke(false);
-                }
-            }
-        });
+	@ReactMethod
+	public void printTextWithFont2(String text, String typeface, float fontsize, final Promise p) {
+		try {
+			//final String txt = text;
+			//final String tf = typeface;
+			//final float fs = fontsize;
+			sunmiPrinterService.printTextWithFont(
+				text,
+				typeface != "" ? typeface : null,
+				fontsize,
+				null
+			);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+        }
+	}
+
+	@ReactMethod
+    public void setPrinterStyle(int x1, int x2, final Promise p) {
+        try {
+            sunmiPrinterService.setPrinterStyle(x1, x2);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+    }
+
+	@ReactMethod
+	public void setFontSize2(int x, final Promise p) {
+		try {
+			sunmiPrinterService.setFontSize(x, null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+        }
+	}
+
+	@ReactMethod
+	public void cutPaper(final Promise p) {
+		try {
+			sunmiPrinterService.cutPaper(null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+        }
+	}
+
+	@ReactMethod
+    public void printColumnsString(ReadableArray colsTextArr, ReadableArray colsWidthArr, ReadableArray colsAlign, final Promise p) {
+        try {
+	        final String[] txts = new String[colsTextArr.size()];
+	        for (int i = 0; i < colsTextArr.size(); i++) {
+	            txts[i] = colsTextArr.getString(i);
+	        }
+	        final int[] width = new int[colsWidthArr.size()];
+	        for (int i = 0; i < colsWidthArr.size(); i++) {
+	            width[i] = colsWidthArr.getInt(i);
+	        }
+	        final int[] align = new int[colsAlign.size()];
+	        for (int i = 0; i < colsAlign.size(); i++) {
+	            align[i] = colsAlign.getInt(i);
+	        }
+	        sunmiPrinterService.printColumnsString(txts, width, align, null);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
     }
 }
