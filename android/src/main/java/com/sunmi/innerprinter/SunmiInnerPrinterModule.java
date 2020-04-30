@@ -1281,6 +1281,20 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 	}
 
 	@ReactMethod
+	public void setFontName2(String text) {
+		Log.i(TAG, "ERROR: setFontName2");
+		try {
+			sunmiPrinterService.setFontName(
+				text,
+				null
+			);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
+        }
+	}
+
+	@ReactMethod
     public void setPrinterStyle(int x1, int x2, final Promise p) {
         Log.i(TAG, "ERROR: setPrinterStyle");
         try {
@@ -1369,4 +1383,17 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 			Log.i(TAG, "ERROR: " + e.getMessage());
         }
     }
+
+	@ReactMethod
+	public void sendRAWData2(String base64EncriptedData, final Promise p) {
+		Log.i(TAG, "ERROR: sendRAWData2");
+		try {
+			final byte[] d = Base64.decode(base64EncriptedData, Base64.DEFAULT);
+			sunmiPrinterService.sendRAWData(d, null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+            Log.i(TAG, "ERROR: " + e.getMessage());
+        }
+	}
+
 }
