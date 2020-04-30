@@ -94,12 +94,17 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
         protected void onConnected(SunmiPrinterService service) {
             sunmiPrinterService = service;
             checkSunmiPrinterService(service);
+
+            showPrinterStatus();
+            //test();
+            Log.i(TAG, "SunmiPrinter is Ready");
         }
 
         @Override
         protected void onDisconnected() {
             sunmiPrinterService = null;
             sunmiPrinter = LostSunmiPrinter;
+            Log.i(TAG, "SunmiPrinter is Not Ready");
         }
     };
 
@@ -112,8 +117,6 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
                     innerPrinterCallback);
             if(!ret){
                 sunmiPrinter = NoSunmiPrinter;
-            }else{
-                Log.i(TAG, "SunmiPrinter is Ready");
             }
         } catch (InnerPrinterException e) {
             e.printStackTrace();
@@ -1082,8 +1085,63 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
         });
     }
 
+    /**
+     * Used to report the real-time query status of the printer, which can be used before each
+     * printing
+     */
+    public void showPrinterStatus(){
+        if(sunmiPrinterService == null){
+			Log.i(TAG, "Printer Service disconnection processing");
+            //TODO Service disconnection processing
+            return;
+        }
+        String result = "Interface is too low to implement interface";
+        try {
+            int res = sunmiPrinterService.updatePrinterState();
+            switch (res){
+                case 1:
+                    result = "printer is running";
+                    break;
+                case 2:
+                    result = "printer found but still initializing";
+                    break;
+                case 3:
+                    result = "printer hardware interface is abnormal and needs to be reprinted";
+                    break;
+                case 4:
+                    result = "printer is out of paper";
+                    break;
+                case 5:
+                    result = "printer is overheating";
+                    break;
+                case 6:
+                    result = "printer's cover is not closed";
+                    break;
+                case 7:
+                    result = "printer's cutter is abnormal";
+                    break;
+                case 8:
+                    result = "printer's cutter is normal";
+                    break;
+                case 9:
+                    result = "not found black mark paper";
+                    break;
+                case 505:
+                    result = "printer does not exist";
+                    break;
+                default:
+                    break;
+            }
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+
+        Log.i(TAG, "Printer Status : " + result);
+    }
+
 	public void test()
     {
+        Log.i(TAG, "Begin test print");
         //Toast.makeText(context, "HELLO", Toast.LENGTH_SHORT).show();
 		if(sunmiPrinterService == null){
 			//TODO Service disconnection processing
@@ -1091,6 +1149,8 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 		}
 
 		try {
+			sunmiPrinterService.enterPrinterBuffer(true);
+
 			int paper = sunmiPrinterService.getPrinterPaper();
 			sunmiPrinterService.printerInit(null);
 			sunmiPrinterService.setAlignment(1, null); // clear
@@ -1158,6 +1218,10 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 			sunmiPrinterService.printText("谢谢惠顾", null); // clear
 			//sunmiPrinterService.autoOutPaper(null);
 			sunmiPrinterService.cutPaper(null); // clear
+
+			sunmiPrinterService.exitPrinterBufferWithCallback(true, null);
+
+			Log.i(TAG, "End test print");
 		} catch (RemoteException e) {
 			e.printStackTrace();
 		}
@@ -1165,34 +1229,41 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 
 	@ReactMethod
 	public void setAlignment2(int alignment, final Promise p) {
+		Log.i(TAG, "ERROR: setAlignment2");
 		try {
 			final int align = alignment;
 			sunmiPrinterService.setAlignment(align, null);
 		} catch (RemoteException e) {
             e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
         }
 	}
 
 	@ReactMethod
 	public void printText(String text, final Promise p) {
+		Log.i(TAG, "ERROR: printText");
 		try {
 			sunmiPrinterService.printText(text, null);
 		} catch (RemoteException e) {
             e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
         }
 	}
 
 	@ReactMethod
 	public void lineWrap2(int x, final Promise p) {
+		Log.i(TAG, "ERROR: lineWrap2");
 		try {
 			sunmiPrinterService.lineWrap(x, null);
 		} catch (RemoteException e) {
             e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
         }
 	}
 
 	@ReactMethod
 	public void printTextWithFont2(String text, String typeface, float fontsize, final Promise p) {
+		Log.i(TAG, "ERROR: printTextWithFont2");
 		try {
 			//final String txt = text;
 			//final String tf = typeface;
@@ -1205,38 +1276,80 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 			);
 		} catch (RemoteException e) {
             e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
         }
 	}
 
 	@ReactMethod
     public void setPrinterStyle(int x1, int x2, final Promise p) {
+        Log.i(TAG, "ERROR: setPrinterStyle");
         try {
             sunmiPrinterService.setPrinterStyle(x1, x2);
         } catch (RemoteException e) {
             e.printStackTrace();
+            Log.i(TAG, "ERROR: " + e.getMessage());
         }
     }
 
 	@ReactMethod
 	public void setFontSize2(int x, final Promise p) {
+		Log.i(TAG, "ERROR: setFontSize2");
 		try {
 			sunmiPrinterService.setFontSize(x, null);
 		} catch (RemoteException e) {
             e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
         }
 	}
 
 	@ReactMethod
 	public void cutPaper(final Promise p) {
+		Log.i(TAG, "ERROR: cutPaper");
 		try {
 			sunmiPrinterService.cutPaper(null);
 		} catch (RemoteException e) {
             e.printStackTrace();
+            Log.i(TAG, "ERROR: " + e.getMessage());
+        }
+	}
+
+	@ReactMethod
+	public void printerInit2(final Promise p) {
+		Log.i(TAG, "ERROR: printerInit2");
+		try {
+			sunmiPrinterService.printerInit(null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+            Log.i(TAG, "ERROR: " + e.getMessage());
+        }
+	}
+
+	@ReactMethod
+	public void enterPrinterBuffer2(boolean clean) {
+		Log.i(TAG, "ERROR: enterPrinterBuffer2");
+		try {
+			sunmiPrinterService.enterPrinterBuffer(clean);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+            Log.i(TAG, "ERROR: " + e.getMessage());
+        }
+	}
+
+	@ReactMethod
+	public void exitPrinterBufferWithCallback(boolean clean) {
+		//InnerResultCallbcak callback = null;
+		Log.i(TAG, "ERROR: exitPrinterBufferWithCallback");
+		try {
+			sunmiPrinterService.exitPrinterBufferWithCallback(clean, null);
+		} catch (RemoteException e) {
+            e.printStackTrace();
+            Log.i(TAG, "ERROR: " + e.getMessage());
         }
 	}
 
 	@ReactMethod
     public void printColumnsString(ReadableArray colsTextArr, ReadableArray colsWidthArr, ReadableArray colsAlign, final Promise p) {
+        Log.i(TAG, "ERROR: printColumnsString");
         try {
 	        final String[] txts = new String[colsTextArr.size()];
 	        for (int i = 0; i < colsTextArr.size(); i++) {
@@ -1253,6 +1366,7 @@ public class SunmiInnerPrinterModule extends ReactContextBaseJavaModule {
 	        sunmiPrinterService.printColumnsString(txts, width, align, null);
         } catch (RemoteException e) {
             e.printStackTrace();
+			Log.i(TAG, "ERROR: " + e.getMessage());
         }
     }
 }
